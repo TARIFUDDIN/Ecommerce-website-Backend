@@ -1,4 +1,4 @@
-import { UploadApiResponse, v2 as cloudinary } from "cloudinary";
+import { v2 as cloudinary } from "cloudinary";
 import { Redis } from "ioredis";
 import mongoose, { Document } from "mongoose";
 import { redis } from "../app.js";
@@ -16,11 +16,11 @@ export const findAverageRatings = async (
     totalRating += review.rating;
   });
 
-  const averateRating = Math.floor(totalRating / reviews.length) || 0;
+  const averageRating = Math.floor(totalRating / reviews.length) || 0;
 
   return {
     numOfReviews: reviews.length,
-    ratings: averateRating,
+    ratings: averageRating,
   };
 };
 
@@ -29,17 +29,17 @@ const getBase64 = (file: Express.Multer.File) =>
 
 export const uploadToCloudinary = async (files: Express.Multer.File[]) => {
   const promises = files.map(async (file) => {
-    return new Promise<UploadApiResponse>((resolve, reject) => {
-      cloudinary.uploader.upload(getBase64(file), (error, result) => {
+    return new Promise<any>((resolve, reject) => { // Updated to any
+      cloudinary.uploader.upload(getBase64(file), (error: any, result: any) => { // Added types
         if (error) return reject(error);
-        resolve(result!);
+        resolve(result);
       });
     });
   });
 
   const result = await Promise.all(promises);
 
-  return result.map((i) => ({
+  return result.map((i: any) => ({
     public_id: i.public_id,
     url: i.secure_url,
   }));
@@ -48,7 +48,7 @@ export const uploadToCloudinary = async (files: Express.Multer.File[]) => {
 export const deleteFromCloudinary = async (publicIds: string[]) => {
   const promises = publicIds.map((id) => {
     return new Promise<void>((resolve, reject) => {
-      cloudinary.uploader.destroy(id, (error, result) => {
+      cloudinary.uploader.destroy(id, (error: any, result: any) => { // Added types
         if (error) return reject(error);
         resolve();
       });

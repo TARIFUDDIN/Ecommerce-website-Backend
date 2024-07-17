@@ -1,9 +1,7 @@
-
-
 import { NextFunction, Request, Response } from "express";
 
-export interface NewUserRequestBody{
-    name: string;
+export interface NewUserRequestBody {
+  name: string;
   email: string;
   photo: string;
   gender: string;
@@ -16,12 +14,15 @@ export interface NewProductRequestBody {
   category: string;
   price: number;
   stock: number;
+  description: string;
 }
+
 export type ControllerType = (
   req: Request,
   res: Response,
   next: NextFunction
 ) => Promise<void | Response<any, Record<string, any>>>;
+
 export type SearchRequestQuery = {
   search?: string;
   price?: string;
@@ -29,22 +30,26 @@ export type SearchRequestQuery = {
   sort?: string;
   page?: string;
 };
-export interface BaseQuery{
-  name?:{
-    $regex:string,
-    $options: string,
+
+export interface BaseQuery {
+  name?: {
+    $regex: string;
+    $options: string;
   };
-  price?:{$lte:number};
+  price?: { $lte: number };
   category?: string;
 }
+
 export type InvalidateCacheProps = {
   product?: boolean;
   order?: boolean;
   admin?: boolean;
-  userId?:string;
-  orderId?:string;
+  review?: boolean;
+  userId?: string;
+  orderId?: string;
   productId?: string | string[];
 };
+
 export type OrderItemType = {
   name: string;
   photo: string;
@@ -52,6 +57,7 @@ export type OrderItemType = {
   quantity: number;
   productId: string;
 };
+
 export type ShippingInfoType = {
   address: string;
   city: string;
@@ -59,11 +65,6 @@ export type ShippingInfoType = {
   country: string;
   pinCode: number;
 };
-
-
-
-
-
 
 export interface NewOrderRequestBody {
   shippingInfo: ShippingInfoType;
