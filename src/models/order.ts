@@ -24,13 +24,11 @@ const schema = new mongoose.Schema(
         required: true,
       },
     },
-
     user: {
       type: String,
       ref: "User",
       required: true,
     },
-
     subtotal: {
       type: Number,
       required: true,
@@ -56,7 +54,6 @@ const schema = new mongoose.Schema(
       enum: ["Processing", "Shipped", "Delivered"],
       default: "Processing",
     },
-
     orderItems: [
       {
         name: String,
@@ -74,5 +71,4 @@ const schema = new mongoose.Schema(
     timestamps: true,
   }
 );
-
 export const Order = mongoose.model("Order", schema);

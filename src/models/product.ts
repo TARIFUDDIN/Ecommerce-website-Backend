@@ -4,52 +4,28 @@ const schema = new mongoose.Schema(
   {
     name: {
       type: String,
-      required: [true, "Please enter Name"],
+      required: [true, "Please enter Product Name"],
     },
-    photos: [
-      {
-        public_id: {
-          type: String,
-          required: [true, "Please enter Public ID"],
-        },
-        url: {
-          type: String,
-          required: [true, "Please enter URL"],
-        },
-      },
-    ],
+    photo: {
+      type: String,
+      required: [true, "Please enter Product Image"],
+    },
     price: {
       type: Number,
-      required: [true, "Please enter Price"],
+      required: [true, "Please enter Product Price"],
     },
     stock: {
       type: Number,
-      required: [true, "Please enter Stock"],
+      required: [true, "Please enter Product Stock"],
     },
     category: {
       type: String,
-      required: [true, "Please enter Category"],
+      required: [true, "Please enter Product Category"],
       trim: true,
-    },
-
-    description: {
-      type: String,
-      required: [true, "Please enter Description"],
-    },
-
-    ratings: {
-      type: Number,
-      default: 0,
-    },
-
-    numOfReviews: {
-      type: Number,
-      default: 0,
     },
   },
   {
     timestamps: true,
   }
 );
-
 export const Product = mongoose.model("Product", schema);

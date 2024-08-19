@@ -1,123 +1,53 @@
-import { v2 as cloudinary } from "cloudinary";
-import { Redis } from "ioredis";
-import mongoose, { Document } from "mongoose";
-import { redis } from "../app.js";
-import { Product } from "../models/product.js";
-import { Review } from "../models/review.js";
+import mongoose from "mongoose";
 import { InvalidateCacheProps, OrderItemType } from "../types/types.js";
-
-export const findAverageRatings = async (
-  productId: mongoose.Types.ObjectId
-) => {
-  let totalRating = 0;
-
-  const reviews = await Review.find({ product: productId });
-  reviews.forEach((review) => {
-    totalRating += review.rating;
-  });
-
-  const averageRating = Math.floor(totalRating / reviews.length) || 0;
-
-  return {
-    numOfReviews: reviews.length,
-    ratings: averageRating,
-  };
-};
-
-const getBase64 = (file: Express.Multer.File) =>
-  `data:${file.mimetype};base64,${file.buffer.toString("base64")}`;
-
-export const uploadToCloudinary = async (files: Express.Multer.File[]) => {
-  const promises = files.map(async (file) => {
-    return new Promise<any>((resolve, reject) => { // Updated to any
-      cloudinary.uploader.upload(getBase64(file), (error: any, result: any) => { // Added types
-        if (error) return reject(error);
-        resolve(result);
-      });
-    });
-  });
-
-  const result = await Promise.all(promises);
-
-  return result.map((i: any) => ({
-    public_id: i.public_id,
-    url: i.secure_url,
-  }));
-};
-
-export const deleteFromCloudinary = async (publicIds: string[]) => {
-  const promises = publicIds.map((id) => {
-    return new Promise<void>((resolve, reject) => {
-      cloudinary.uploader.destroy(id, (error: any, result: any) => { // Added types
-        if (error) return reject(error);
-        resolve();
-      });
-    });
-  });
-
-  await Promise.all(promises);
-};
-
-export const connectRedis = (redisURI: string) => {
-  const redis = new Redis(redisURI);
-
-  redis.on("connect", () => console.log("Redis Connected"));
-  redis.on("error", (e) => console.log(e));
-
-  return redis;
-};
+import { myCache } from "../app.js";
+import { Product } from "../models/product.js";
+import { Order } from "../models/order.js";
 
 export const connectDB = (uri: string) => {
   mongoose
     .connect(uri, {
-      dbName: "Ecommerce_24",
+      dbName: "Vipani_DB",
     })
     .then((c) => console.log(`DB Connected to ${c.connection.host}`))
     .catch((e) => console.log(e));
 };
 
-export const invalidateCache = async ({
+export const invalidateCache = ({
   product,
   order,
   admin,
-  review,
   userId,
   orderId,
   productId,
 }: InvalidateCacheProps) => {
-  if (review) {
-    await redis.del([`reviews-${productId}`]);
-  }
-
   if (product) {
     const productKeys: string[] = [
       "latest-products",
       "categories",
       "all-products",
     ];
-
     if (typeof productId === "string") productKeys.push(`product-${productId}`);
-
     if (typeof productId === "object")
-      productId.forEach((i) => productKeys.push(`product-${i}`));
+      productId.forEach((i) => productKeys.push(`product-${productId}`));
 
-    await redis.del(productKeys);
+    myCache.del(productKeys);
   }
   if (order) {
-    const ordersKeys: string[] = [
+    const orderKeys: string[] = [
       "all-orders",
-      `my-orders-${userId}`,
+      `my-order-${userId}`,
       `order-${orderId}`,
     ];
 
-    await redis.del(ordersKeys);
+    myCache.del(orderKeys);
   }
   if (admin) {
-    await redis.del([
+    myCache.del([
       "admin-stats",
       "admin-pie-charts",
-      "admin-bar-charts",
       "admin-line-charts",
+      "admin-bar-charts",
     ]);
   }
 };
@@ -132,9 +62,12 @@ export const reduceStock = async (orderItems: OrderItemType[]) => {
   }
 };
 
-export const calculatePercentage = (thisMonth: number, lastMonth: number) => {
-  if (lastMonth === 0) return thisMonth * 100;
-  const percent = (thisMonth / lastMonth) * 100;
+export const calculatePercentage = (
+  currentMonth: number,
+  lastMonth: number
+) => {
+  if (lastMonth === 0) return currentMonth * 100;
+  const percent = ((currentMonth - lastMonth) / lastMonth) * 100;
   return Number(percent.toFixed(0));
 };
 
@@ -148,17 +81,13 @@ export const getInventories = async ({
   const categoriesCountPromise = categories.map((category) =>
     Product.countDocuments({ category })
   );
-
   const categoriesCount = await Promise.all(categoriesCountPromise);
-
   const categoryCount: Record<string, number>[] = [];
-
   categories.forEach((category, i) => {
     categoryCount.push({
       [category]: Math.round((categoriesCount[i] / productsCount) * 100),
     });
   });
-
   return categoryCount;
 };
 
@@ -169,31 +98,26 @@ interface MyDocument extends Document {
 }
 type FuncProps = {
   length: number;
-  docArr: MyDocument[];
-  today: Date;
+  docArr: any;
   property?: "discount" | "total";
+  today: Date;
 };
 
 export const getChartData = ({
   length,
   docArr,
-  today,
   property,
+  today,
 }: FuncProps) => {
   const data: number[] = new Array(length).fill(0);
-
-  docArr.forEach((i) => {
+  docArr.forEach((i: { [x: string]: any; createdAt: any }) => {
     const creationDate = i.createdAt;
     const monthDiff = (today.getMonth() - creationDate.getMonth() + 12) % 12;
 
     if (monthDiff < length) {
-      if (property) {
-        data[length - monthDiff - 1] += i[property]!;
-      } else {
-        data[length - monthDiff - 1] += 1;
-      }
+      if (property) data[length - monthDiff - 1] += i[property]!;
+      else data[length - monthDiff - 1] += 1;
     }
   });
-
   return data;
 };

@@ -1,11 +1,12 @@
 import { NextFunction, Request, Response } from "express";
 
 export interface NewUserRequestBody {
-  name: string;
-  email: string;
-  photo: string;
-  gender: string;
   _id: string;
+  name: string;
+  photo: string;
+  email: string;
+  role: "admin" | "user";
+  gender: "male" | "female";
   dob: Date;
 }
 
@@ -14,29 +15,30 @@ export interface NewProductRequestBody {
   category: string;
   price: number;
   stock: number;
-  description: string;
 }
 
 export type ControllerType = (
-  req: Request,
+  req: Request<any>,
   res: Response,
   next: NextFunction
 ) => Promise<void | Response<any, Record<string, any>>>;
 
-export type SearchRequestQuery = {
+export interface SearchRequestQuery {
   search?: string;
-  price?: string;
   category?: string;
-  sort?: string;
   page?: string;
-};
+  price?: string;
+  sort?: string;
+}
 
 export interface BaseQuery {
   name?: {
     $regex: string;
     $options: string;
   };
-  price?: { $lte: number };
+  price?: {
+    $lte: number;
+  };
   category?: string;
 }
 
@@ -44,12 +46,18 @@ export type InvalidateCacheProps = {
   product?: boolean;
   order?: boolean;
   admin?: boolean;
-  review?: boolean;
   userId?: string;
   orderId?: string;
   productId?: string | string[];
 };
 
+export type ShippingInfoType = {
+  address: string;
+  state: string;
+  city: number;
+  country: number;
+  pinCode: number;
+};
 export type OrderItemType = {
   name: string;
   photo: string;
@@ -57,17 +65,8 @@ export type OrderItemType = {
   quantity: number;
   productId: string;
 };
-
-export type ShippingInfoType = {
-  address: string;
-  city: string;
-  state: string;
-  country: string;
-  pinCode: number;
-};
-
-export interface NewOrderRequestBody {
-  shippingInfo: ShippingInfoType;
+export interface NeewOrderRequestBody {
+  shippingInfo: {};
   user: string;
   subtotal: number;
   tax: number;

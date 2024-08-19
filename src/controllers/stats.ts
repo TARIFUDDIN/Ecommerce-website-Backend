@@ -1,4 +1,4 @@
-import { redis, redisTTL } from "../app.js";
+import { myCache } from "../app.js";
 import { TryCatch } from "../middlewares/error.js";
 import { Order } from "../models/order.js";
 import { Product } from "../models/product.js";
@@ -10,35 +10,29 @@ import {
 } from "../utils/features.js";
 
 export const getDashboardStats = TryCatch(async (req, res, next) => {
-  let stats;
-
+  let stats = {};
   const key = "admin-stats";
-
-  stats = await redis.get(key);
-
-  if (stats) stats = JSON.parse(stats);
+  if (myCache.has(key)) stats = JSON.parse(myCache.get(key) as string);
   else {
     const today = new Date();
+
     const sixMonthsAgo = new Date();
     sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
 
-    const thisMonth = {
+    const currentMonth = {
       start: new Date(today.getFullYear(), today.getMonth(), 1),
       end: today,
     };
-
     const lastMonth = {
       start: new Date(today.getFullYear(), today.getMonth() - 1, 1),
       end: new Date(today.getFullYear(), today.getMonth(), 0),
     };
-
-    const thisMonthProductsPromise = Product.find({
+    const currentMonthProductsPromise = Product.find({
       createdAt: {
-        $gte: thisMonth.start,
-        $lte: thisMonth.end,
+        $gte: currentMonth.start,
+        $lte: currentMonth.end,
       },
     });
-
     const lastMonthProductsPromise = Product.find({
       createdAt: {
         $gte: lastMonth.start,
@@ -46,13 +40,12 @@ export const getDashboardStats = TryCatch(async (req, res, next) => {
       },
     });
 
-    const thisMonthUsersPromise = User.find({
+    const currentMonthUsersPromise = User.find({
       createdAt: {
-        $gte: thisMonth.start,
-        $lte: thisMonth.end,
+        $gte: currentMonth.start,
+        $lte: currentMonth.end,
       },
     });
-
     const lastMonthUsersPromise = User.find({
       createdAt: {
         $gte: lastMonth.start,
@@ -60,20 +53,18 @@ export const getDashboardStats = TryCatch(async (req, res, next) => {
       },
     });
 
-    const thisMonthOrdersPromise = Order.find({
+    const currentMonthOrdersPromise = Order.find({
       createdAt: {
-        $gte: thisMonth.start,
-        $lte: thisMonth.end,
+        $gte: currentMonth.start,
+        $lte: currentMonth.end,
       },
     });
-
     const lastMonthOrdersPromise = Order.find({
       createdAt: {
         $gte: lastMonth.start,
         $lte: lastMonth.end,
       },
     });
-
     const lastSixMonthOrdersPromise = Order.find({
       createdAt: {
         $gte: sixMonthsAgo,
@@ -84,11 +75,10 @@ export const getDashboardStats = TryCatch(async (req, res, next) => {
     const latestTransactionsPromise = Order.find({})
       .select(["orderItems", "discount", "total", "status"])
       .limit(4);
-
     const [
-      thisMonthProducts,
-      thisMonthUsers,
-      thisMonthOrders,
+      currentMonthProducts,
+      currentMonthUsers,
+      currentMonthOrders,
       lastMonthProducts,
       lastMonthUsers,
       lastMonthOrders,
@@ -98,11 +88,11 @@ export const getDashboardStats = TryCatch(async (req, res, next) => {
       lastSixMonthOrders,
       categories,
       femaleUsersCount,
-      latestTransaction,
+      latestTransactions,
     ] = await Promise.all([
-      thisMonthProductsPromise,
-      thisMonthUsersPromise,
-      thisMonthOrdersPromise,
+      currentMonthProductsPromise,
+      currentMonthUsersPromise,
+      currentMonthOrdersPromise,
       lastMonthProductsPromise,
       lastMonthUsersPromise,
       lastMonthOrdersPromise,
@@ -114,44 +104,42 @@ export const getDashboardStats = TryCatch(async (req, res, next) => {
       User.countDocuments({ gender: "female" }),
       latestTransactionsPromise,
     ]);
-
-    const thisMonthRevenue = thisMonthOrders.reduce(
+    const currentMonthRevenue = currentMonthOrders.reduce(
       (total, order) => total + (order.total || 0),
       0
     );
-
     const lastMonthRevenue = lastMonthOrders.reduce(
       (total, order) => total + (order.total || 0),
       0
     );
-
-    const changePercent = {
-      revenue: calculatePercentage(thisMonthRevenue, lastMonthRevenue),
+    const changedPercent = {
       product: calculatePercentage(
-        thisMonthProducts.length,
+        currentMonthProducts.length,
         lastMonthProducts.length
       ),
-      user: calculatePercentage(thisMonthUsers.length, lastMonthUsers.length),
+      user: calculatePercentage(
+        currentMonthUsers.length,
+        lastMonthUsers.length
+      ),
       order: calculatePercentage(
-        thisMonthOrders.length,
+        currentMonthOrders.length,
         lastMonthOrders.length
       ),
+      revenue: calculatePercentage(currentMonthRevenue, lastMonthRevenue),
     };
-
     const revenue = allOrders.reduce(
       (total, order) => total + (order.total || 0),
       0
     );
-
-    const count = {
-      revenue,
+    const counts = {
       product: productsCount,
       user: usersCount,
       order: allOrders.length,
+      revenue,
     };
 
     const orderMonthCounts = new Array(6).fill(0);
-    const orderMonthyRevenue = new Array(6).fill(0);
+    const orderMonthlyRevenue = new Array(6).fill(0);
 
     lastSixMonthOrders.forEach((order) => {
       const creationDate = order.createdAt;
@@ -159,9 +147,13 @@ export const getDashboardStats = TryCatch(async (req, res, next) => {
 
       if (monthDiff < 6) {
         orderMonthCounts[6 - monthDiff - 1] += 1;
-        orderMonthyRevenue[6 - monthDiff - 1] += order.total;
+        orderMonthlyRevenue[6 - monthDiff - 1] += order.total;
       }
     });
+    const chart = {
+      order: orderMonthCounts,
+      revenue: orderMonthlyRevenue,
+    };
 
     const categoryCount = await getInventories({
       categories,
@@ -173,42 +165,33 @@ export const getDashboardStats = TryCatch(async (req, res, next) => {
       female: femaleUsersCount,
     };
 
-    const modifiedLatestTransaction = latestTransaction.map((i) => ({
+    const modifiedLatestTransaction = latestTransactions.map((i) => ({
       _id: i._id,
       discount: i.discount,
       amount: i.total,
       quantity: i.orderItems.length,
       status: i.status,
     }));
-
     stats = {
+      changedPercent,
+      counts,
+      chart,
       categoryCount,
-      changePercent,
-      count,
-      chart: {
-        order: orderMonthCounts,
-        revenue: orderMonthyRevenue,
-      },
       userRatio,
-      latestTransaction: modifiedLatestTransaction,
+      modifiedLatestTransaction,
     };
 
-    await redis.setex(key, redisTTL, JSON.stringify(stats));
+    myCache.set(key, JSON.stringify(stats));
   }
-
   return res.status(200).json({
     success: true,
     stats,
   });
 });
-
 export const getPieCharts = TryCatch(async (req, res, next) => {
   let charts;
   const key = "admin-pie-charts";
-
-  charts = await redis.get(key);
-
-  if (charts) charts = JSON.parse(charts);
+  if (myCache.has(key)) charts = JSON.parse(myCache.get(key) as string);
   else {
     const allOrderPromise = Order.find({}).select([
       "total",
@@ -217,14 +200,13 @@ export const getPieCharts = TryCatch(async (req, res, next) => {
       "tax",
       "shippingCharges",
     ]);
-
     const [
       processingOrder,
       shippedOrder,
       deliveredOrder,
       categories,
       productsCount,
-      outOfStock,
+      productsOutOfStock,
       allOrders,
       allUsers,
       adminUsers,
@@ -247,68 +229,64 @@ export const getPieCharts = TryCatch(async (req, res, next) => {
       shipped: shippedOrder,
       delivered: deliveredOrder,
     };
-
-    const productCategories = await getInventories({
+    const productCategoriesRatio = await getInventories({
       categories,
       productsCount,
     });
 
-    const stockAvailablity = {
-      inStock: productsCount - outOfStock,
-      outOfStock,
+    const stockAvialability = {
+      inStock: productsCount - productsOutOfStock,
+      outOfStock: productsOutOfStock,
     };
-
-    const grossIncome = allOrders.reduce(
+    const totalGrossIncome = allOrders.reduce(
       (prev, order) => prev + (order.total || 0),
       0
     );
-
-    const discount = allOrders.reduce(
+    const totalDiscount = allOrders.reduce(
       (prev, order) => prev + (order.discount || 0),
       0
     );
-
-    const productionCost = allOrders.reduce(
+    const totalProductionCost = allOrders.reduce(
       (prev, order) => prev + (order.shippingCharges || 0),
       0
     );
-
-    const burnt = allOrders.reduce((prev, order) => prev + (order.tax || 0), 0);
-
-    const marketingCost = Math.round(grossIncome * (30 / 100));
-
+    const totalBurnt = allOrders.reduce(
+      (prev, order) => prev + (order.tax || 0),
+      0
+    );
+    const totalMarketingCost = Math.round(totalGrossIncome * (30 / 100));
     const netMargin =
-      grossIncome - discount - productionCost - burnt - marketingCost;
-
+      totalGrossIncome -
+      totalDiscount -
+      totalProductionCost -
+      totalBurnt -
+      totalMarketingCost;
     const revenueDistribution = {
       netMargin,
-      discount,
-      productionCost,
-      burnt,
-      marketingCost,
+      totalDiscount,
+      totalProductionCost,
+      totalBurnt,
+      totalMarketingCost,
     };
-
     const usersAgeGroup = {
       teen: allUsers.filter((i) => i.age < 20).length,
       adult: allUsers.filter((i) => i.age >= 20 && i.age < 40).length,
       old: allUsers.filter((i) => i.age >= 40).length,
     };
-
-    const adminCustomer = {
+    const adminsAndUsersCount = {
       admin: adminUsers,
-      customer: customerUsers,
+      user: customerUsers,
     };
-
     charts = {
       orderFullfillment,
-      productCategories,
-      stockAvailablity,
+      productCategoriesRatio,
+      stockAvialability,
       revenueDistribution,
+      adminsAndUsersCount,
       usersAgeGroup,
-      adminCustomer,
     };
 
-    await redis.setex(key, redisTTL, JSON.stringify(charts));
+    myCache.set(key, JSON.stringify(charts));
   }
 
   return res.status(200).json({
@@ -316,76 +294,75 @@ export const getPieCharts = TryCatch(async (req, res, next) => {
     charts,
   });
 });
-
 export const getBarCharts = TryCatch(async (req, res, next) => {
   let charts;
   const key = "admin-bar-charts";
 
-  charts = await redis.get(key);
-
-  if (charts) charts = JSON.parse(charts);
+  if (myCache.has(key)) charts = JSON.parse(myCache.get(key) as string);
   else {
     const today = new Date();
 
     const sixMonthsAgo = new Date();
     sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-
     const twelveMonthsAgo = new Date();
     twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
 
-    const sixMonthProductPromise = Product.find({
+    const lastSixMonthProductsPromise = Product.find({
       createdAt: {
         $gte: sixMonthsAgo,
         $lte: today,
       },
     }).select("createdAt");
-
-    const sixMonthUsersPromise = User.find({
+    const lastSixMonthUsersPromise = User.find({
       createdAt: {
         $gte: sixMonthsAgo,
         $lte: today,
       },
     }).select("createdAt");
-
-    const twelveMonthOrdersPromise = Order.find({
+    const lastTwelveMonthOrdersPromise = Order.find({
       createdAt: {
         $gte: twelveMonthsAgo,
         $lte: today,
       },
     }).select("createdAt");
-
-    const [products, users, orders] = await Promise.all([
-      sixMonthProductPromise,
-      sixMonthUsersPromise,
-      twelveMonthOrdersPromise,
-    ]);
-
-    const productCounts = getChartData({ length: 6, today, docArr: products });
-    const usersCounts = getChartData({ length: 6, today, docArr: users });
-    const ordersCounts = getChartData({ length: 12, today, docArr: orders });
-
+    const [lastSixMonthProducts, lastSixMonthUsers, lastTwelveMonthOrders] =
+      await Promise.all([
+        lastSixMonthProductsPromise,
+        lastSixMonthUsersPromise,
+        lastTwelveMonthOrdersPromise,
+      ]);
+    const productCount = getChartData({
+      length: 6,
+      today,
+      docArr: lastSixMonthProducts,
+    });
+    const usersCount = getChartData({
+      length: 6,
+      today,
+      docArr: lastSixMonthUsers,
+    });
+    const orderCount = getChartData({
+      length: 12,
+      today,
+      docArr: lastTwelveMonthOrders,
+    });
     charts = {
-      users: usersCounts,
-      products: productCounts,
-      orders: ordersCounts,
+      users: usersCount,
+      products: productCount,
+      orders: orderCount,
     };
-
-    await redis.setex(key, redisTTL, JSON.stringify(charts));
+    myCache.set(key, JSON.stringify(charts));
   }
-
   return res.status(200).json({
     success: true,
     charts,
   });
 });
-
 export const getLineCharts = TryCatch(async (req, res, next) => {
   let charts;
   const key = "admin-line-charts";
 
-  charts = await redis.get(key);
-
-  if (charts) charts = JSON.parse(charts);
+  if (myCache.has(key)) charts = JSON.parse(myCache.get(key) as string);
   else {
     const today = new Date();
 
@@ -399,37 +376,45 @@ export const getLineCharts = TryCatch(async (req, res, next) => {
       },
     };
 
-    const [products, users, orders] = await Promise.all([
+    const [
+      lastTwelveMonthProducts,
+      lastTwelveMonthUsers,
+      lastTwelveMonthOrders,
+    ] = await Promise.all([
       Product.find(baseQuery).select("createdAt"),
       User.find(baseQuery).select("createdAt"),
       Order.find(baseQuery).select(["createdAt", "discount", "total"]),
     ]);
-
-    const productCounts = getChartData({ length: 12, today, docArr: products });
-    const usersCounts = getChartData({ length: 12, today, docArr: users });
+    const productCount = getChartData({
+      length: 12,
+      today,
+      docArr: lastTwelveMonthProducts,
+    });
+    const usersCount = getChartData({
+      length: 12,
+      today,
+      docArr: lastTwelveMonthUsers,
+    });
     const discount = getChartData({
       length: 12,
       today,
-      docArr: orders,
+      docArr: lastTwelveMonthOrders,
       property: "discount",
     });
     const revenue = getChartData({
       length: 12,
       today,
-      docArr: orders,
+      docArr: lastTwelveMonthOrders,
       property: "total",
     });
-
     charts = {
-      users: usersCounts,
-      products: productCounts,
+      users: usersCount,
+      products: productCount,
       discount,
       revenue,
     };
-
-    await redis.setex(key, redisTTL, JSON.stringify(charts));
+    myCache.set(key, JSON.stringify(charts));
   }
-
   return res.status(200).json({
     success: true,
     charts,
